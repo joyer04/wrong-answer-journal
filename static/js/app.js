@@ -163,6 +163,7 @@ const App = (() => {
       }
 
       analysisData = await res.json();
+      window._lastAnalysisData = analysisData;
       _renderResults(analysisData);
 
     } catch (err) {
@@ -186,6 +187,9 @@ const App = (() => {
     $('print-bar').style.display = 'flex';
     const mobilePrintBar = document.getElementById('mobile-print-bar');
     if (mobilePrintBar) mobilePrintBar.style.display = 'flex';
+
+    const saveBtn = document.getElementById('save-btn');
+    if (saveBtn) saveBtn.style.display = 'inline-flex';
 
     _activateTab('solution');
 
@@ -521,5 +525,166 @@ const App = (() => {
     removeImage, openCamera, capturePhoto, closeCamera,
     analyze, switchTab, toggleAnswers,
     printProblems, printAnswers, printAll,
+    _renderResultsPublic: _renderResults,
   };
+})();
+
+/**
+ * History — manages problem history in localStorage
+ */
+const History = (() => {
+  const STORAGE_KEY = 'wrong-answer-journal-history';
+  const MAX_ENTRIES = 50;
+  let isOpen = false;
+
+  const $ = id => document.getElementById(id);
+
+  /* ── Storage helpers ─────────────────────────────── */
+  function _load() {
+    try {
+      return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+    } catch { return []; }
+  }
+
+  function _save(entries) {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(entries));
+    } catch (e) {
+      console.warn('localStorage save failed:', e);
+    }
+  }
+
+  /* ── Public API ─────────────────────────────────── */
+  function saveCurrentResult() {
+    // Access the global analysisData from App (need App to expose it)
+    // We'll call window._lastAnalysisData set by App
+    const data = window._lastAnalysisData;
+    if (!data) return;
+
+    const entries = _load();
+    const entry = {
+      id: Date.now(),
+      savedAt: new Date().toISOString(),
+      problemText: data.problem_text || '',
+      problemType: data.problem_type || '',
+      difficulty: data.difficulty || '',
+      finalAnswer: data.solution?.final_answer || '',
+      data: data,
+    };
+
+    // Deduplicate by problem text (simple check)
+    const alreadySaved = entries.some(e => e.problemText === entry.problemText);
+    if (alreadySaved) {
+      // Show a brief notification
+      _showSaveNotification('이미 저장된 문제입니다.');
+      return;
+    }
+
+    entries.unshift(entry);
+    // Keep only the most recent MAX_ENTRIES
+    if (entries.length > MAX_ENTRIES) entries.length = MAX_ENTRIES;
+    _save(entries);
+    _updateCount();
+    _showSaveNotification('오답노트에 저장되었습니다! 💾');
+  }
+
+  function clearAll() {
+    if (!confirm('저장된 기록을 모두 삭제하시겠습니까?')) return;
+    localStorage.removeItem(STORAGE_KEY);
+    _updateCount();
+    _renderList();
+  }
+
+  function toggle() {
+    isOpen = !isOpen;
+    const panel = $('history-panel');
+    if (panel) {
+      panel.style.display = isOpen ? 'block' : 'none';
+      if (isOpen) _renderList();
+    }
+  }
+
+  function _updateCount() {
+    const entries = _load();
+    const countEl = $('history-count');
+    if (!countEl) return;
+    if (entries.length > 0) {
+      countEl.textContent = entries.length;
+      countEl.style.display = 'inline';
+    } else {
+      countEl.style.display = 'none';
+    }
+  }
+
+  function _renderList() {
+    const listEl = $('history-list');
+    if (!listEl) return;
+    const entries = _load();
+
+    if (!entries.length) {
+      listEl.innerHTML = '<p class="history-empty">아직 저장된 문제가 없습니다.</p>';
+      return;
+    }
+
+    listEl.innerHTML = '';
+    entries.forEach(entry => {
+      const item = document.createElement('div');
+      item.className = 'history-item';
+
+      const date = new Date(entry.savedAt);
+      const dateStr = `${date.getMonth()+1}/${date.getDate()} ${date.getHours()}:${String(date.getMinutes()).padStart(2,'0')}`;
+
+      item.innerHTML = `
+        <div class="history-item-meta">
+          <span class="badge badge-type">${_escH(entry.problemType || '기타')}</span>
+          <span class="badge badge-level">${_escH(entry.difficulty || '')}</span>
+          <span class="history-date">${dateStr}</span>
+        </div>
+        <p class="history-problem">${_escH(entry.problemText.slice(0, 80))}${entry.problemText.length > 80 ? '…' : ''}</p>
+        <div class="history-answer">정답: <strong>${_escH(entry.finalAnswer)}</strong></div>
+        <div class="history-item-actions">
+          <button class="btn btn-ghost btn-sm" onclick="History.restore(${entry.id})" aria-label="다시 보기">🔍 다시 보기</button>
+          <button class="btn btn-ghost btn-sm" onclick="History.remove(${entry.id})" aria-label="삭제">🗑</button>
+        </div>
+      `;
+      listEl.appendChild(item);
+    });
+  }
+
+  function restore(id) {
+    const entries = _load();
+    const entry = entries.find(e => e.id === id);
+    if (!entry) return;
+    // Re-render the results panel with the saved data
+    window._lastAnalysisData = entry.data;
+    App._renderResultsPublic(entry.data);
+    toggle(); // close history panel
+    $('results').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  function remove(id) {
+    const entries = _load().filter(e => e.id !== id);
+    _save(entries);
+    _updateCount();
+    _renderList();
+  }
+
+  function _showSaveNotification(msg) {
+    const toast = $('toast');
+    if (toast) {
+      toast.textContent = msg;
+      toast.style.display = 'block';
+      clearTimeout(toast._timer);
+      toast._timer = setTimeout(() => { toast.style.display = 'none'; }, 2500);
+    }
+  }
+
+  function _escH(str) {
+    return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  // Initialize count on load
+  _updateCount();
+
+  return { saveCurrentResult, clearAll, toggle, restore, remove, _renderList };
 })();

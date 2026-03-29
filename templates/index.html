@@ -29,6 +29,10 @@
       </div>
     </div>
     <div class="header-actions" id="print-bar" style="display:none">
+      <button class="btn btn-ghost" onclick="History.toggle()" id="history-btn" aria-label="오답 기록 보기">
+        📖 기록
+        <span class="history-count" id="history-count" style="display:none">0</span>
+      </button>
       <button class="btn btn-ghost" aria-label="문제만 인쇄" onclick="App.printProblems()">🖨️ 문제만 인쇄</button>
       <button class="btn btn-ghost" aria-label="답지 인쇄" onclick="App.printAnswers()">🖨️ 답지 인쇄</button>
       <button class="btn btn-ghost" aria-label="전체 인쇄" onclick="App.printAll()">🖨️ 전체 인쇄</button>
@@ -120,6 +124,10 @@
       </div>
     </div>
 
+    <button class="btn btn-outline save-btn no-print" id="save-btn" onclick="History.saveCurrentResult()" aria-label="현재 문제 오답노트에 저장" style="display:none">
+      💾 오답노트에 저장
+    </button>
+
     <!-- Tab navigation -->
     <div class="tabs no-print" id="tab-nav">
       <button class="tab active" data-tab="solution" onclick="App.switchTab(this)">📐 풀이과정</button>
@@ -201,6 +209,24 @@
     <button class="btn btn-ghost" aria-label="답지 인쇄" onclick="App.printAnswers()">🖨️ 답지 인쇄</button>
     <button class="btn btn-ghost" aria-label="전체 인쇄" onclick="App.printAll()">🖨️ 전체 인쇄</button>
   </div>
+
+  <!-- ─── HISTORY PANEL ─── -->
+  <section class="history-panel no-print" id="history-panel" style="display:none">
+    <div class="history-header">
+      <h3>📖 오답 기록</h3>
+      <div class="history-actions">
+        <button class="btn btn-ghost btn-sm" onclick="History.clearAll()" aria-label="기록 전체 삭제">
+          🗑 전체 삭제
+        </button>
+        <button class="btn btn-ghost btn-sm" onclick="History.toggle()" aria-label="기록 닫기">
+          ✕
+        </button>
+      </div>
+    </div>
+    <div id="history-list" class="history-list">
+      <p class="history-empty">아직 저장된 문제가 없습니다.</p>
+    </div>
+  </section>
 </main>
 
 <!-- ═══════════════════════════════════════ CAMERA MODAL ═══ -->
