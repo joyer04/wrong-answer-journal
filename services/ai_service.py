@@ -21,6 +21,10 @@ from anthropic import AsyncAnthropic
 _client: AsyncAnthropic | None = None
 
 
+class AIParseError(ValueError):
+    """Raised when Claude's response cannot be parsed as JSON."""
+
+
 def _get_client() -> AsyncAnthropic:
     global _client
     if _client is None:
@@ -190,7 +194,7 @@ async def analyze_math_problem(
                 return json.loads(extracted)
             except json.JSONDecodeError:
                 pass
-        raise ValueError(
+        raise AIParseError(
             f"Claude returned non-JSON response. Raw (first 500 chars):\n{raw[:500]}"
         ) from exc
 
