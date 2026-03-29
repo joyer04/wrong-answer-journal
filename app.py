@@ -12,14 +12,17 @@ Then open http://localhost:8000 in your browser.
 from __future__ import annotations
 
 import base64
+import io
 import os
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from PIL import Image
 from starlette.requests import Request
 
 load_dotenv()
@@ -27,10 +30,37 @@ load_dotenv()
 from services.ai_service import analyze_math_problem
 from services.diagram_service import generate_diagram_base64
 
+BASE_DIR = Path(__file__).parent
+
+# Maximum accepted upload size (10 MB)
+MAX_IMAGE_BYTES = 10 * 1024 * 1024
+
+# Allowed image magic-byte signatures  {magic_bytes: canonical_mime}
+_IMAGE_SIGNATURES: list[tuple[bytes, str]] = [
+    (b"\xff\xd8\xff", "image/jpeg"),
+    (b"\x89PNG\r\n\x1a\n", "image/png"),
+    (b"GIF87a", "image/gif"),
+    (b"GIF89a", "image/gif"),
+    (b"RIFF", "image/webp"),      # RIFF....WEBP — checked further below
+    (b"\x00\x00\x00\x0cftyp", "image/heic"),  # HEIF/HEIC ftyp box
+    (b"\x00\x00\x00\x18ftyp", "image/heic"),
+    (b"\x00\x00\x00\x1cftyp", "image/heic"),
+    (b"\x00\x00\x00\x20ftyp", "image/heic"),
+]
+
+
+def _detect_mime(data: bytes) -> str | None:
+    """Return the canonical MIME type based on magic bytes, or None."""
+    for magic, mime in _IMAGE_SIGNATURES:
+        if data[:len(magic)] == magic:
+            if mime == "image/webp" and data[8:12] != b"WEBP":
+                continue
+            return mime
+    return None
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup: verify API key is set
     if not os.environ.get("ANTHROPIC_API_KEY"):
         print("WARNING: ANTHROPIC_API_KEY is not set. Please set it in your .env file.")
     yield
@@ -38,8 +68,8 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="오답노트 - Wrong Answer Journal", lifespan=lifespan)
 
-app.mount("/static", StaticFiles(directory="static"), name="static")
-templates = Jinja2Templates(directory="templates")
+app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
+templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -53,16 +83,7 @@ async def analyze(
     text: str = Form(None),
     language: str = Form("korean"),
 ):
-    """Analyze a math problem from an image or text input.
-
-    Returns a structured JSON with:
-    - problem_text: extracted/cleaned problem statement
-    - problem_type: category of the problem
-    - difficulty: estimated Korean grade level
-    - solution: step-by-step solution
-    - concept: 개념원리-level conceptual explanation
-    - similar_problems: 3 generated practice problems with answers
-    """
+    """Analyze a math problem from an image or text input."""
     if (not image or not image.filename) and not text:
         raise HTTPException(status_code=400, detail="이미지 또는 텍스트를 입력해주세요.")
 
@@ -70,12 +91,35 @@ async def analyze(
     media_type = "image/jpeg"
 
     if image and image.filename:
-        contents = await image.read()
-        image_base64 = base64.standard_b64encode(contents).decode()
-        media_type = image.content_type or "image/jpeg"
-        # Normalize HEIC to jpeg media type for API compatibility
+        # Read with a hard size cap to prevent memory exhaustion
+        contents = await image.read(MAX_IMAGE_BYTES + 1)
+        if len(contents) > MAX_IMAGE_BYTES:
+            raise HTTPException(
+                status_code=413, detail="이미지 크기가 10MB를 초과합니다."
+            )
+
+        # Validate actual file content via magic bytes (not client-supplied type)
+        detected = _detect_mime(contents)
+        if detected is None:
+            raise HTTPException(
+                status_code=415, detail="지원하지 않는 이미지 형식입니다. JPG, PNG, WEBP, HEIC를 사용해주세요."
+            )
+        media_type = detected
+
+        # Convert HEIC/HEIF to JPEG bytes so the API receives correct content
         if media_type in ("image/heic", "image/heif"):
-            media_type = "image/jpeg"
+            try:
+                pil_img = Image.open(io.BytesIO(contents)).convert("RGB")
+                buf = io.BytesIO()
+                pil_img.save(buf, format="JPEG", quality=92)
+                contents = buf.getvalue()
+                media_type = "image/jpeg"
+            except Exception as exc:
+                raise HTTPException(
+                    status_code=422, detail=f"HEIC 이미지 변환 실패: {exc}"
+                ) from exc
+
+        image_base64 = base64.standard_b64encode(contents).decode()
 
     try:
         result = await analyze_math_problem(
@@ -96,7 +140,6 @@ async def analyze(
                 img_b64 = generate_diagram_base64(diagram)
                 result["similar_problems"][i]["diagram_image"] = img_b64
             except Exception as exc:
-                # Diagram generation is non-critical; log and continue
                 print(f"[diagram] Problem {i + 1} failed: {exc}")
 
     return result

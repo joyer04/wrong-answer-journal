@@ -434,7 +434,7 @@ textarea:focus { outline: none; border-color: var(--border-focus); background: #
 
   .tab-panel { display: block !important; }
 
-  /* Show all answers in print */
+  /* Default print: show all answers */
   .practice-answer { display: block !important; }
 
   /* Answer sheet section */
@@ -443,18 +443,17 @@ textarea:focus { outline: none; border-color: var(--border-focus); background: #
     padding-top: 1rem;
   }
   .answer-sheet h2 { font-size: 1.4rem; margin-bottom: 1rem; border-bottom: 2px solid #000; padding-bottom: .5rem; }
+
+  /* ── Print mode: problems only (no answers) ── */
+  body.print-problems-only .practice-answer,
+  body.print-problems-only .answer-sheet { display: none !important; }
+
+  /* ── Print mode: answers sheet only ── */
+  body.print-answers-only .tab-panel:not(#panel-practice),
+  body.print-answers-only .problem-bar,
+  body.print-answers-only .tabs { display: none !important; }
+  body.print-answers-only .practice-answer { display: block !important; }
 }
-
-/* ── Print mode: problems only (no answers) ── */
-body.print-problems-only .practice-answer,
-body.print-problems-only .answer-sheet { display: none !important; }
-
-/* ── Print mode: answers only ── */
-body.print-answers-only .tab-panel:not(#panel-practice),
-body.print-answers-only .problem-bar,
-body.print-answers-only .tabs { display: none !important; }
-body.print-answers-only .practice-answer { display: block !important; }
-body.print-answers-only .practice-answer.visible { display: block !important; }
 
 /* ── Print-only elements ─────────────────────────────── */
 .print-only { display: none; }

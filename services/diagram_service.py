@@ -23,6 +23,7 @@ import matplotlib
 import matplotlib.patches as mpatches
 import matplotlib.pyplot as plt
 import numpy as np
+import sympy as sp
 
 matplotlib.use("Agg")  # Non-interactive backend (no display needed)
 
@@ -86,17 +87,17 @@ def _function_graph(spec: dict) -> plt.Figure:
     title     = spec.get("title", "")
 
     x = np.linspace(x_range[0], x_range[1], 600)
-
-    # Safe namespace for eval — only numpy math
-    _ns: dict = {k: getattr(np, k) for k in dir(np) if not k.startswith("_")}
-    _ns["__builtins__"] = {}
+    _x_sym = sp.Symbol("x")
 
     for i, func in enumerate(functions):
         expr  = func.get("expr", "x")
         label = func.get("label", expr)
         color = func.get("color", PALETTE[i % len(PALETTE)])
         try:
-            y = eval(expr, {"x": x, **_ns})  # noqa: S307
+            # Use sympy to safely parse the expression, then lambdify for numpy
+            expr_sym = sp.sympify(expr)
+            f_numpy  = sp.lambdify(_x_sym, expr_sym, modules=["numpy"])
+            y = np.asarray(f_numpy(x), dtype=float)
             # Mask large discontinuities (asymptotes)
             with np.errstate(invalid="ignore"):
                 dy = np.abs(np.diff(y, prepend=y[0]))

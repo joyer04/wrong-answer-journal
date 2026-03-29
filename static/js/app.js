@@ -12,14 +12,21 @@
 
 const App = (() => {
   /* ── State ──────────────────────────────────────────── */
-  let selectedFile = null;
-  let language     = 'korean';
-  let analysisData = null;
-  let answersShown = false;
-  let cameraStream = null;
+  let selectedFile  = null;
+  let previewUrl    = null;   // object URL — must be revoked when replaced
+  let language      = 'korean';
+  let analysisData  = null;
+  let answersShown  = false;
+  let cameraStream  = null;
 
   /* ── DOM references ─────────────────────────────────── */
   const $ = id => document.getElementById(id);
+
+  /* ── Page-unload guard: release camera + object URL ── */
+  window.addEventListener('pagehide', () => {
+    _stopCamera();
+    _revokePreviewUrl();
+  });
 
   /* ══════════════════════════════════════════════════════
      LANGUAGE
@@ -55,16 +62,25 @@ const App = (() => {
   }
 
   function _setPreview(file) {
+    _revokePreviewUrl();                     // release previous blob URL
     selectedFile = file;
-    const url = URL.createObjectURL(file);
-    $('preview-img').src = url;
+    previewUrl   = URL.createObjectURL(file);
+    $('preview-img').src           = previewUrl;
     $('dz-idle').style.display    = 'none';
     $('dz-preview').style.display = 'flex';
+  }
+
+  function _revokePreviewUrl() {
+    if (previewUrl) {
+      URL.revokeObjectURL(previewUrl);
+      previewUrl = null;
+    }
   }
 
   function removeImage(event) {
     event.stopPropagation();
     selectedFile = null;
+    _revokePreviewUrl();
     $('preview-img').src          = '';
     $('dz-idle').style.display    = 'block';
     $('dz-preview').style.display = 'none';
@@ -80,7 +96,7 @@ const App = (() => {
       cameraStream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: 'environment' }
       });
-      $('cam-video').srcObject = cameraStream;
+      $('cam-video').srcObject        = cameraStream;
       $('camera-modal').style.display = 'flex';
     } catch {
       _toast('카메라를 열 수 없습니다. 브라우저 권한을 확인해주세요.');
@@ -102,12 +118,17 @@ const App = (() => {
   }
 
   function closeCamera() {
+    _stopCamera();
+    $('camera-modal').style.display = 'none';
+  }
+
+  function _stopCamera() {
     if (cameraStream) {
       cameraStream.getTracks().forEach(t => t.stop());
       cameraStream = null;
     }
-    $('cam-video').srcObject       = null;
-    $('camera-modal').style.display = 'none';
+    const video = $('cam-video');
+    if (video) video.srcObject = null;
   }
 
   /* ══════════════════════════════════════════════════════
@@ -121,10 +142,10 @@ const App = (() => {
     }
 
     // Show loading, hide results
-    $('loading').style.display  = 'flex';
-    $('results').style.display  = 'none';
+    $('loading').style.display   = 'flex';
+    $('results').style.display   = 'none';
     $('print-bar').style.display = 'none';
-    $('analyze-btn').disabled   = true;
+    $('analyze-btn').disabled    = true;
 
     try {
       const formData = new FormData();
@@ -161,10 +182,9 @@ const App = (() => {
     $('results').style.display   = 'block';
     $('print-bar').style.display = 'flex';
 
-    // Switch to solution tab
     _activateTab('solution');
 
-    // Re-render math (MathJax)
+    // Ask MathJax to typeset everything that was just rendered
     if (window.MathJax?.typesetPromise) {
       MathJax.typesetPromise([$('results')]).catch(console.warn);
     }
@@ -172,12 +192,12 @@ const App = (() => {
     $('results').scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
-  /* Problem bar */
+  /* Problem bar — use innerHTML with _esc so MathJax can process LaTeX */
   function _renderProblemBar(data) {
     $('badge-type').textContent  = _typeLabel(data.problem_type);
     $('badge-level').textContent = data.difficulty || '';
-    $('problem-statement').textContent = data.problem_text || '';
-    $('final-answer').textContent = data.solution?.final_answer || '';
+    $('problem-statement').innerHTML = _esc(data.problem_text || '');
+    $('final-answer').innerHTML      = _esc(data.solution?.final_answer || '');
   }
 
   /* Solution */
@@ -190,7 +210,8 @@ const App = (() => {
     }
     solution.steps.forEach(step => {
       const li = document.createElement('li');
-      li.textContent = step;
+      // innerHTML + _esc preserves LaTeX delimiters as text nodes for MathJax
+      li.innerHTML = _esc(step);
       list.appendChild(li);
     });
   }
@@ -200,7 +221,8 @@ const App = (() => {
     if (!c) return;
 
     $('concept-title').textContent = c.title || '';
-    $('concept-def').textContent   = c.definition || '';
+    // concept-def may contain LaTeX — use innerHTML so MathJax can typeset it
+    $('concept-def').innerHTML = _esc(c.definition || '');
 
     // Formulas
     const formulaList = $('formula-list');
@@ -209,8 +231,8 @@ const App = (() => {
       $('formulas-block').style.display = 'block';
       c.formulas.forEach(f => {
         const div = document.createElement('div');
-        div.className   = 'formula-item';
-        div.textContent = f;
+        div.className = 'formula-item';
+        div.innerHTML = _esc(f);
         formulaList.appendChild(div);
       });
     } else {
@@ -225,16 +247,16 @@ const App = (() => {
     // Tip
     if (c.tip) {
       $('concept-tip').textContent = c.tip;
-      $('tip-box').style.display = 'flex';
+      $('tip-box').style.display   = 'flex';
     } else {
-      $('tip-box').style.display = 'none';
+      $('tip-box').style.display   = 'none';
     }
   }
 
   /* Practice problems */
   function _renderPractice(problems) {
-    const container  = $('practice-list');
-    const ansSheet   = $('answer-sheet-body');
+    const container = $('practice-list');
+    const ansSheet  = $('answer-sheet-body');
     container.innerHTML = '';
     ansSheet.innerHTML  = '';
     answersShown = false;
@@ -248,14 +270,14 @@ const App = (() => {
       const header = document.createElement('div');
       header.className = 'practice-card-header';
       header.innerHTML = `
-        <div class="practice-num">${p.number || i + 1}</div>
+        <div class="practice-num" aria-label="문제 ${p.number || i + 1}">${p.number || i + 1}</div>
         <div class="practice-q">${_esc(p.question || '')}</div>
       `;
 
       const body = document.createElement('div');
       body.className = 'practice-body';
 
-      // Diagram (if generated server-side)
+      // Diagram (server-side generated PNG)
       if (p.diagram_image) {
         const dWrap = document.createElement('div');
         dWrap.className = 'practice-diagram';
@@ -271,8 +293,9 @@ const App = (() => {
       ansSection.className = 'practice-answer-section';
 
       const toggleBtn = document.createElement('button');
-      toggleBtn.className = 'answer-toggle-btn';
-      toggleBtn.innerHTML = '▶ 풀이 및 정답 보기';
+      toggleBtn.className  = 'answer-toggle-btn';
+      toggleBtn.innerHTML  = '▶ 풀이 및 정답 보기';
+      toggleBtn.setAttribute('aria-expanded', 'false');
       toggleBtn.onclick = () => _toggleCard(ansSection);
 
       const ansContent = document.createElement('div');
@@ -292,7 +315,7 @@ const App = (() => {
       card.appendChild(body);
       container.appendChild(card);
 
-      /* ── Answer sheet entry ── */
+      /* ── Answer sheet entry (print-only) ── */
       const asEntry = document.createElement('div');
       asEntry.style.marginBottom = '1.5rem';
       asEntry.innerHTML = `
@@ -310,22 +333,17 @@ const App = (() => {
      UI HELPERS
      ══════════════════════════════════════════════════════ */
   function switchTab(btn) {
-    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-    btn.classList.add('active');
     _activateTab(btn.dataset.tab);
     if (window.MathJax?.typesetPromise) {
-      const panel = $('panel-' + btn.dataset.tab);
-      MathJax.typesetPromise([panel]).catch(console.warn);
+      MathJax.typesetPromise([$('panel-' + btn.dataset.tab)]).catch(console.warn);
     }
   }
 
   function _activateTab(name) {
     document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
     const panel = $('panel-' + name);
     if (panel) panel.classList.add('active');
-    document.querySelectorAll('.tab').forEach(t => {
-      t.classList.toggle('active', t.dataset.tab === name);
-    });
   }
 
   function toggleAnswers() {
@@ -341,6 +359,7 @@ const App = (() => {
     const btn     = ansSection.querySelector('.answer-toggle-btn');
     const showing = content.classList.toggle('visible');
     btn.innerHTML = showing ? '▼ 풀이 및 정답 숨기기' : '▶ 풀이 및 정답 보기';
+    btn.setAttribute('aria-expanded', showing ? 'true' : 'false');
     if (showing && window.MathJax?.typesetPromise) {
       MathJax.typesetPromise([content]).catch(console.warn);
     }
@@ -350,7 +369,7 @@ const App = (() => {
     ul.innerHTML = '';
     items.forEach(item => {
       const li = document.createElement('li');
-      li.textContent = item;
+      li.innerHTML = _esc(item);   // innerHTML so MathJax can process LaTeX in list items
       ul.appendChild(li);
     });
   }
@@ -362,26 +381,51 @@ const App = (() => {
     _activateTab('practice');
     document.body.classList.add('print-problems-only');
     document.body.classList.remove('print-answers-only');
-    setTimeout(() => { window.print(); document.body.classList.remove('print-problems-only'); }, 300);
+    setTimeout(() => {
+      window.print();
+      document.body.classList.remove('print-problems-only');
+    }, 300);
   }
 
   function printAnswers() {
     _activateTab('practice');
     document.body.classList.add('print-answers-only');
     document.body.classList.remove('print-problems-only');
-    setTimeout(() => { window.print(); document.body.classList.remove('print-answers-only'); }, 300);
+    setTimeout(() => {
+      window.print();
+      document.body.classList.remove('print-answers-only');
+    }, 300);
   }
 
   function printAll() {
     document.body.classList.remove('print-problems-only', 'print-answers-only');
-    // Show all answers before printing
-    document.querySelectorAll('.practice-answer').forEach(el => el.classList.add('visible'));
-    setTimeout(() => { window.print(); }, 300);
+    // Remember which answers were visible so we can restore after print
+    const wasVisible = new Set(
+      [...document.querySelectorAll('.practice-answer.visible')].map(
+        (el, i) => i
+      )
+    );
+    const allAnswers = [...document.querySelectorAll('.practice-answer')];
+    allAnswers.forEach(el => el.classList.add('visible'));
+
+    setTimeout(() => {
+      window.print();
+      // Restore previous visibility state
+      allAnswers.forEach((el, i) => {
+        el.classList.toggle('visible', wasVisible.has(i) || answersShown);
+      });
+    }, 300);
   }
 
   /* ══════════════════════════════════════════════════════
      UTILITIES
      ══════════════════════════════════════════════════════ */
+
+  /**
+   * Escape a string for safe insertion via innerHTML.
+   * This keeps LaTeX delimiters (\( \) \[ \]) intact as text
+   * while neutralising any HTML special characters.
+   */
   function _esc(str) {
     return String(str)
       .replace(/&/g, '&amp;')
@@ -407,8 +451,8 @@ const App = (() => {
 
   function _toast(msg, duration = 2500) {
     const t = $('toast');
-    t.textContent    = msg;
-    t.style.display  = 'block';
+    t.textContent   = msg;
+    t.style.display = 'block';
     clearTimeout(t._timer);
     t._timer = setTimeout(() => { t.style.display = 'none'; }, duration);
   }

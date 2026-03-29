@@ -15,9 +15,21 @@ import os
 import re
 from typing import Optional
 
-from anthropic import Anthropic
+from anthropic import AsyncAnthropic
 
-client = Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
+# Lazy client: created on first call so load_dotenv() always runs first.
+_client: AsyncAnthropic | None = None
+
+
+def _get_client() -> AsyncAnthropic:
+    global _client
+    if _client is None:
+        api_key = os.environ.get("ANTHROPIC_API_KEY")
+        if not api_key:
+            raise RuntimeError("ANTHROPIC_API_KEY 환경 변수가 설정되지 않았습니다.")
+        _client = AsyncAnthropic(api_key=api_key)
+    return _client
+
 
 LANGUAGE_INSTRUCTIONS: dict[str, str] = {
     "korean":   "모든 응답을 한국어로 작성하세요.",
@@ -98,14 +110,18 @@ The JSON must follow this exact schema:
 }
 
 Diagram type rules:
-- "none"          → no diagram
-- "function_graph" → use for functions/equations that should be graphed;
-                     expr must be valid Python/NumPy (use ** not ^, use np.sqrt, etc.)
-- "triangle"      → for geometry triangle problems;
+- "none"           → no diagram
+- "function_graph" → use for functions/equations that should be graphed.
+                     IMPORTANT: expr must use only: numbers, the variable x,
+                     basic arithmetic operators (+ - * / **), and sympy-compatible
+                     functions (sqrt, sin, cos, tan, exp, log, Abs).
+                     No imports, no attribute access, no builtins, no semicolons.
+                     Example valid exprs: "x**2 - 3*x + 2", "sqrt(x)", "sin(x)"
+- "triangle"       → for geometry triangle problems;
                      vertices are [x, y] coordinates scaled for clarity
-- "circle"        → for circle geometry; include center [x,y] and radius (number),
+- "circle"         → for circle geometry; include center [x,y] and radius (number),
                      optional points array with {angle_deg, label}
-- "number_line"   → for inequalities / number-line problems;
+- "number_line"    → for inequalities / number-line problems;
                      include range [min, max] and points array with
                      {x, label, type: "open"|"closed"}
 
@@ -151,9 +167,10 @@ async def analyze_math_problem(
 
     content.append({"type": "text", "text": user_text})
 
-    response = client.messages.create(
+    response = await _get_client().messages.create(
         model="claude-opus-4-6",
         max_tokens=4096,
+        timeout=90.0,
         system=SYSTEM_PROMPT,
         messages=[{"role": "user", "content": content}],
     )
@@ -166,10 +183,13 @@ async def analyze_math_problem(
     try:
         return json.loads(raw)
     except json.JSONDecodeError as exc:
-        # Attempt a best-effort extraction of JSON object from the response
+        # Attempt a best-effort extraction of the outermost JSON object
         extracted = _extract_json(raw)
         if extracted:
-            return json.loads(extracted)
+            try:
+                return json.loads(extracted)
+            except json.JSONDecodeError:
+                pass
         raise ValueError(
             f"Claude returned non-JSON response. Raw (first 500 chars):\n{raw[:500]}"
         ) from exc
@@ -184,8 +204,9 @@ def _strip_code_fence(text: str) -> str:
     text = text.strip()
     if text.startswith("```"):
         lines = text.splitlines()
-        # Drop first line (```json or ```) and last line (```)
-        inner = lines[1:] if lines[-1].strip() == "```" else lines[1:]
+        # Drop opening fence line (```json or ```)
+        inner = lines[1:]
+        # Drop closing fence line if present
         if inner and inner[-1].strip() == "```":
             inner = inner[:-1]
         text = "\n".join(inner).strip()
@@ -193,6 +214,16 @@ def _strip_code_fence(text: str) -> str:
 
 
 def _extract_json(text: str) -> Optional[str]:
-    """Try to find the first {...} block in text."""
-    match = re.search(r"\{.*\}", text, re.DOTALL)
-    return match.group(0) if match else None
+    """Try to find the outermost balanced {...} block in text."""
+    start = text.find("{")
+    if start == -1:
+        return None
+    depth = 0
+    for i, ch in enumerate(text[start:], start):
+        if ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                return text[start : i + 1]
+    return None
