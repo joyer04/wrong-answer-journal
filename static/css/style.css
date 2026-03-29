@@ -478,6 +478,23 @@ textarea:focus { outline: none; border-color: var(--border-focus); background: #
   body.print-answers-only .practice-answer { display: block !important; }
 }
 
+/* ── Inline error ─────────────────────────────────────── */
+.inline-error {
+  display: none;
+  align-items: center;
+  gap: .75rem;
+  padding: .85rem 1.1rem;
+  background: #fef2f2;
+  border: 1.5px solid #fca5a5;
+  border-radius: var(--radius-sm);
+  color: #991b1b;
+  font-size: .9rem;
+  margin-top: .75rem;
+  flex-wrap: wrap;
+}
+.error-icon { font-size: 1.1rem; flex-shrink: 0; }
+.btn-sm { padding: .3rem .75rem; font-size: .8rem; }
+
 /* ── Print-only elements ─────────────────────────────── */
 .print-only { display: none; }
 @media print { .print-only { display: block; } }

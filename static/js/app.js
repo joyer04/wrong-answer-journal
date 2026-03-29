@@ -135,6 +135,7 @@ const App = (() => {
      ANALYSIS
      ══════════════════════════════════════════════════════ */
   async function analyze() {
+    _clearError();
     const textInput = $('problem-text').value.trim();
     if (!selectedFile && !textInput) {
       _toast('사진 또는 텍스트로 문제를 입력해주세요.');
@@ -156,14 +157,16 @@ const App = (() => {
       const res = await fetch('/api/analyze', { method: 'POST', body: formData });
       if (!res.ok) {
         const err = await res.json().catch(() => ({ detail: res.statusText }));
-        throw new Error(err.detail || '분석 중 오류가 발생했습니다.');
+        const detail = err.detail;
+        const message = typeof detail === 'object' ? detail.message : (detail || '분석 중 오류가 발생했습니다.');
+        throw new Error(message);
       }
 
       analysisData = await res.json();
       _renderResults(analysisData);
 
     } catch (err) {
-      _toast('오류: ' + err.message, 4000);
+      _showError(err.message);
     } finally {
       $('loading').style.display = 'none';
       $('analyze-btn').disabled  = false;
@@ -181,6 +184,8 @@ const App = (() => {
 
     $('results').style.display   = 'block';
     $('print-bar').style.display = 'flex';
+    const mobilePrintBar = document.getElementById('mobile-print-bar');
+    if (mobilePrintBar) mobilePrintBar.style.display = 'flex';
 
     _activateTab('solution');
 
@@ -333,9 +338,13 @@ const App = (() => {
      UI HELPERS
      ══════════════════════════════════════════════════════ */
   function switchTab(btn) {
+    const panel = $('panel-' + btn.dataset.tab);
     _activateTab(btn.dataset.tab);
-    if (window.MathJax?.typesetPromise) {
-      MathJax.typesetPromise([$('panel-' + btn.dataset.tab)]).catch(console.warn);
+    if (window.MathJax?.typesetPromise && panel) {
+      panel.setAttribute('aria-busy', 'true');
+      MathJax.typesetPromise([panel])
+        .then(() => panel.removeAttribute('aria-busy'))
+        .catch(console.warn);
     }
   }
 
@@ -418,6 +427,31 @@ const App = (() => {
   }
 
   /* ══════════════════════════════════════════════════════
+     ERROR DISPLAY
+     ══════════════════════════════════════════════════════ */
+  function _showError(msg) {
+    // Show inline error below the analyze button
+    let errEl = $('inline-error');
+    if (!errEl) {
+      errEl = document.createElement('div');
+      errEl.id = 'inline-error';
+      errEl.className = 'inline-error';
+      $('analyze-btn').insertAdjacentElement('afterend', errEl);
+    }
+    errEl.innerHTML = `
+      <span class="error-icon">⚠️</span>
+      <span>${_esc(msg)}</span>
+      <button class="btn btn-outline btn-sm" onclick="App.analyze()">다시 시도</button>
+    `;
+    errEl.style.display = 'flex';
+  }
+
+  function _clearError() {
+    const errEl = $('inline-error');
+    if (errEl) errEl.style.display = 'none';
+  }
+
+  /* ══════════════════════════════════════════════════════
      UTILITIES
      ══════════════════════════════════════════════════════ */
 
@@ -456,6 +490,30 @@ const App = (() => {
     clearTimeout(t._timer);
     t._timer = setTimeout(() => { t.style.display = 'none'; }, duration);
   }
+
+  /* ── Keyboard shortcuts ─────────────────────────────── */
+  document.addEventListener('keydown', e => {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+      e.preventDefault();
+      App.analyze();
+    }
+    if (e.key === 'Escape') {
+      App.closeCamera();
+    }
+  });
+
+  /* ── Clipboard paste ────────────────────────────────── */
+  document.addEventListener('paste', e => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    for (const item of items) {
+      if (item.type.startsWith('image/')) {
+        const file = item.getAsFile();
+        if (file) { _setPreview(file); _toast('📋 클립보드 이미지 붙여넣기'); }
+        break;
+      }
+    }
+  });
 
   /* ── Public API ─────────────────────────────────────── */
   return {
