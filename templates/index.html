@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>오답노트 — Wrong Answer Journal</title>
+
+  <!-- MathJax for LaTeX rendering -->
+  <script>
+    window.MathJax = {
+      tex: { inlineMath: [["\\(","\\)"], ["$","$"]], displayMath: [["\\[","\\]"], ["$$","$$"]] },
+      options: { skipHtmlTags: ["script","noscript","style","textarea","pre"] }
+    };
+  </script>
+  <script async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"></script>
+
+  <link rel="stylesheet" href="/static/css/style.css" />
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════════ HEADER ═══ -->
+<header class="app-header no-print">
+  <div class="header-inner">
+    <div class="logo">
+      <span class="logo-mark">오</span>
+      <div class="logo-text">
+        <strong>오답노트</strong>
+        <span>Wrong Answer Journal</span>
+      </div>
+    </div>
+    <div class="header-actions" id="print-bar" style="display:none">
+      <button class="btn btn-ghost" onclick="App.printProblems()">🖨️ 문제만 인쇄</button>
+      <button class="btn btn-ghost" onclick="App.printAnswers()">🖨️ 답지 인쇄</button>
+      <button class="btn btn-ghost" onclick="App.printAll()">🖨️ 전체 인쇄</button>
+    </div>
+  </div>
+</header>
+
+<!-- ══════════════════════════════════════════ MAIN ══════ -->
+<main class="main">
+
+  <!-- ─── INPUT SECTION ─── -->
+  <section class="card input-card no-print" id="input-section">
+    <h2 class="section-title">문제 입력</h2>
+
+    <!-- Language selector -->
+    <div class="lang-row">
+      <span class="label-sm">언어 / Language</span>
+      <div class="lang-group" id="lang-group">
+        <button class="lang-btn active" data-lang="korean"   onclick="App.setLang(this)">한국어</button>
+        <button class="lang-btn"        data-lang="english"  onclick="App.setLang(this)">English</button>
+        <button class="lang-btn"        data-lang="chinese"  onclick="App.setLang(this)">中文</button>
+        <button class="lang-btn"        data-lang="japanese" onclick="App.setLang(this)">日本語</button>
+      </div>
+    </div>
+
+    <!-- Drop zone -->
+    <div class="dropzone" id="dropzone"
+         onclick="document.getElementById('file-input').click()"
+         ondrop="App.handleDrop(event)"
+         ondragover="App.handleDragOver(event)"
+         ondragleave="App.handleDragLeave(event)">
+      <div class="dropzone-idle" id="dz-idle">
+        <div class="dz-icon">📸</div>
+        <p class="dz-title">사진을 드래그하거나 클릭하여 업로드</p>
+        <p class="dz-sub">JPG · PNG · HEIC 지원</p>
+        <div class="dz-actions" onclick="event.stopPropagation()">
+          <label class="btn btn-primary">
+            파일 선택
+            <input type="file" id="file-input" accept="image/*"
+                   onchange="App.handleFile(event)" style="display:none" />
+          </label>
+          <button class="btn btn-outline" onclick="App.openCamera(event)">📷 카메라</button>
+        </div>
+      </div>
+      <div class="dropzone-preview" id="dz-preview" style="display:none">
+        <img id="preview-img" alt="미리보기" />
+        <button class="remove-btn" onclick="App.removeImage(event)" title="이미지 제거">✕</button>
+      </div>
+    </div>
+
+    <!-- Text fallback -->
+    <div class="text-area-wrap">
+      <div class="divider-text"><span>또는 텍스트로 입력</span></div>
+      <textarea id="problem-text"
+                placeholder="수학 문제를 여기에 입력하세요…&#10;예) x² - 5x + 6 = 0 을 풀어라"
+                rows="4"></textarea>
+    </div>
+
+    <button class="btn btn-primary btn-analyze" id="analyze-btn" onclick="App.analyze()">
+      🔍 AI 분석하기
+    </button>
+  </section>
+
+  <!-- ─── LOADING ─── -->
+  <div class="loading-wrap no-print" id="loading" style="display:none">
+    <div class="loading-card">
+      <div class="spinner"></div>
+      <p class="loading-title">AI가 문제를 분석하고 있습니다…</p>
+      <p class="loading-sub">개념원리 수준의 해설을 생성 중</p>
+    </div>
+  </div>
+
+  <!-- ─── RESULTS ─── -->
+  <section id="results" style="display:none">
+
+    <!-- Problem summary bar -->
+    <div class="problem-bar card">
+      <div class="problem-meta">
+        <span class="badge badge-type"  id="badge-type">유형</span>
+        <span class="badge badge-level" id="badge-level">난이도</span>
+      </div>
+      <div class="problem-statement" id="problem-statement"></div>
+      <div class="answer-box">
+        <span class="answer-label">정답</span>
+        <span class="answer-value" id="final-answer"></span>
+      </div>
+    </div>
+
+    <!-- Tab navigation -->
+    <div class="tabs no-print" id="tab-nav">
+      <button class="tab active" data-tab="solution" onclick="App.switchTab(this)">📐 풀이과정</button>
+      <button class="tab"        data-tab="concept"  onclick="App.switchTab(this)">📚 핵심개념</button>
+      <button class="tab"        data-tab="practice" onclick="App.switchTab(this)">✏️ 유사문제</button>
+    </div>
+
+    <!-- ── Solution tab ── -->
+    <div class="tab-panel active" id="panel-solution">
+      <div class="card">
+        <h3 class="panel-title">📐 풀이 과정</h3>
+        <ol class="solution-list" id="solution-steps"></ol>
+      </div>
+    </div>
+
+    <!-- ── Concept tab ── -->
+    <div class="tab-panel" id="panel-concept">
+      <div class="card concept-card">
+        <div class="concept-header">
+          <div class="concept-icon-wrap">📚</div>
+          <div>
+            <p class="concept-pre">개념원리 핵심 개념</p>
+            <h3 class="concept-title" id="concept-title"></h3>
+          </div>
+        </div>
+
+        <div class="concept-block">
+          <h4 class="concept-block-title">📖 개념 정의</h4>
+          <div class="concept-def" id="concept-def"></div>
+        </div>
+
+        <div class="concept-block" id="formulas-block">
+          <h4 class="concept-block-title">🔢 핵심 공식</h4>
+          <div class="formula-list" id="formula-list"></div>
+        </div>
+
+        <div class="concept-block">
+          <h4 class="concept-block-title">✅ 핵심 포인트</h4>
+          <ul class="point-list" id="key-points"></ul>
+        </div>
+
+        <div class="concept-block">
+          <h4 class="concept-block-title">⚠️ 자주 하는 실수</h4>
+          <ul class="mistake-list" id="common-mistakes"></ul>
+        </div>
+
+        <div class="tip-box" id="tip-box">
+          <span class="tip-icon">💡</span>
+          <div>
+            <strong>기억 팁</strong>
+            <p id="concept-tip"></p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Practice tab ── -->
+    <div class="tab-panel" id="panel-practice">
+      <div class="practice-header no-print">
+        <h3 class="panel-title">✏️ 유사 문제 3선</h3>
+        <button class="btn btn-outline" id="toggle-ans-btn" onclick="App.toggleAnswers()">
+          👁 답 보기
+        </button>
+      </div>
+      <div id="practice-list" class="practice-list"></div>
+
+      <!-- Print-only answer sheet -->
+      <div class="print-only answer-sheet" id="answer-sheet">
+        <h2>정답 및 풀이</h2>
+        <div id="answer-sheet-body"></div>
+      </div>
+    </div>
+
+  </section><!-- /results -->
+</main>
+
+<!-- ═══════════════════════════════════════ CAMERA MODAL ═══ -->
+<div class="modal-overlay" id="camera-modal" style="display:none" onclick="App.closeCamera()">
+  <div class="modal" onclick="event.stopPropagation()">
+    <h3>📷 카메라로 촬영</h3>
+    <video id="cam-video" autoplay playsinline style="width:100%;border-radius:10px;"></video>
+    <canvas id="cam-canvas" style="display:none"></canvas>
+    <div class="modal-actions">
+      <button class="btn btn-primary" onclick="App.capturePhoto()">📸 찍기</button>
+      <button class="btn btn-outline" onclick="App.closeCamera()">취소</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════ ERROR TOAST ═══ -->
+<div class="toast" id="toast" style="display:none"></div>
+
+<script src="/static/js/app.js"></script>
+</body>
+</html>
