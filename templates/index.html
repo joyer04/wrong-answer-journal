@@ -29,9 +29,9 @@
       </div>
     </div>
     <div class="header-actions" id="print-bar" style="display:none">
-      <button class="btn btn-ghost" onclick="App.printProblems()">🖨️ 문제만 인쇄</button>
-      <button class="btn btn-ghost" onclick="App.printAnswers()">🖨️ 답지 인쇄</button>
-      <button class="btn btn-ghost" onclick="App.printAll()">🖨️ 전체 인쇄</button>
+      <button class="btn btn-ghost" aria-label="문제만 인쇄" onclick="App.printProblems()">🖨️ 문제만 인쇄</button>
+      <button class="btn btn-ghost" aria-label="답지 인쇄" onclick="App.printAnswers()">🖨️ 답지 인쇄</button>
+      <button class="btn btn-ghost" aria-label="전체 인쇄" onclick="App.printAll()">🖨️ 전체 인쇄</button>
     </div>
   </div>
 </header>
@@ -47,15 +47,17 @@
     <div class="lang-row">
       <span class="label-sm">언어 / Language</span>
       <div class="lang-group" id="lang-group">
-        <button class="lang-btn active" data-lang="korean"   onclick="App.setLang(this)">한국어</button>
-        <button class="lang-btn"        data-lang="english"  onclick="App.setLang(this)">English</button>
-        <button class="lang-btn"        data-lang="chinese"  onclick="App.setLang(this)">中文</button>
-        <button class="lang-btn"        data-lang="japanese" onclick="App.setLang(this)">日本語</button>
+        <button class="lang-btn active" data-lang="korean"   aria-label="언어: 한국어"  onclick="App.setLang(this)">한국어</button>
+        <button class="lang-btn"        data-lang="english"  aria-label="언어: English" onclick="App.setLang(this)">English</button>
+        <button class="lang-btn"        data-lang="chinese"  aria-label="언어: 中文"    onclick="App.setLang(this)">中文</button>
+        <button class="lang-btn"        data-lang="japanese" aria-label="언어: 日本語"  onclick="App.setLang(this)">日本語</button>
       </div>
     </div>
 
     <!-- Drop zone -->
     <div class="dropzone" id="dropzone"
+         role="button"
+         aria-label="이미지 드래그 또는 클릭하여 업로드"
          onclick="document.getElementById('file-input').click()"
          ondrop="App.handleDrop(event)"
          ondragover="App.handleDragOver(event)"
@@ -65,35 +67,36 @@
         <p class="dz-title">사진을 드래그하거나 클릭하여 업로드</p>
         <p class="dz-sub">JPG · PNG · HEIC 지원</p>
         <div class="dz-actions" onclick="event.stopPropagation()">
-          <label class="btn btn-primary">
+          <label class="btn btn-primary" aria-label="이미지 파일 선택">
             파일 선택
             <input type="file" id="file-input" accept="image/*"
                    onchange="App.handleFile(event)" style="display:none" />
           </label>
-          <button class="btn btn-outline" onclick="App.openCamera(event)">📷 카메라</button>
+          <button class="btn btn-outline" aria-label="카메라로 촬영" onclick="App.openCamera(event)">📷 카메라</button>
         </div>
       </div>
       <div class="dropzone-preview" id="dz-preview" style="display:none">
         <img id="preview-img" alt="미리보기" />
-        <button class="remove-btn" onclick="App.removeImage(event)" title="이미지 제거">✕</button>
+        <button class="remove-btn" aria-label="이미지 제거" onclick="App.removeImage(event)" title="이미지 제거">✕</button>
       </div>
     </div>
 
     <!-- Text fallback -->
     <div class="text-area-wrap">
       <div class="divider-text"><span>또는 텍스트로 입력</span></div>
+      <label class="sr-only" for="problem-text">수학 문제 텍스트 입력</label>
       <textarea id="problem-text"
                 placeholder="수학 문제를 여기에 입력하세요…&#10;예) x² - 5x + 6 = 0 을 풀어라"
                 rows="4"></textarea>
     </div>
 
-    <button class="btn btn-primary btn-analyze" id="analyze-btn" onclick="App.analyze()">
+    <button class="btn btn-primary btn-analyze" id="analyze-btn" aria-label="AI로 수학 문제 분석하기" onclick="App.analyze()">
       🔍 AI 분석하기
     </button>
   </section>
 
   <!-- ─── LOADING ─── -->
-  <div class="loading-wrap no-print" id="loading" style="display:none">
+  <div class="loading-wrap no-print" id="loading" style="display:none" role="status" aria-live="polite">
     <div class="loading-card">
       <div class="spinner"></div>
       <p class="loading-title">AI가 문제를 분석하고 있습니다…</p>
@@ -177,7 +180,7 @@
     <div class="tab-panel" id="panel-practice">
       <div class="practice-header no-print">
         <h3 class="panel-title">✏️ 유사 문제 3선</h3>
-        <button class="btn btn-outline" id="toggle-ans-btn" onclick="App.toggleAnswers()">
+        <button class="btn btn-outline" id="toggle-ans-btn" aria-label="답 보기/숨기기 전환" onclick="App.toggleAnswers()">
           👁 답 보기
         </button>
       </div>
@@ -191,17 +194,24 @@
     </div>
 
   </section><!-- /results -->
+
+  <!-- ─── MOBILE PRINT BAR ─── -->
+  <div class="mobile-print-bar no-print" id="mobile-print-bar" style="display:none" data-show-with-results="true">
+    <button class="btn btn-ghost" aria-label="문제만 인쇄" onclick="App.printProblems()">🖨️ 문제만 인쇄</button>
+    <button class="btn btn-ghost" aria-label="답지 인쇄" onclick="App.printAnswers()">🖨️ 답지 인쇄</button>
+    <button class="btn btn-ghost" aria-label="전체 인쇄" onclick="App.printAll()">🖨️ 전체 인쇄</button>
+  </div>
 </main>
 
 <!-- ═══════════════════════════════════════ CAMERA MODAL ═══ -->
-<div class="modal-overlay" id="camera-modal" style="display:none" onclick="App.closeCamera()">
+<div class="modal-overlay" id="camera-modal" style="display:none" aria-label="카메라 모달 닫기" onclick="App.closeCamera()">
   <div class="modal" onclick="event.stopPropagation()">
     <h3>📷 카메라로 촬영</h3>
     <video id="cam-video" autoplay playsinline style="width:100%;border-radius:10px;"></video>
     <canvas id="cam-canvas" style="display:none"></canvas>
     <div class="modal-actions">
-      <button class="btn btn-primary" onclick="App.capturePhoto()">📸 찍기</button>
-      <button class="btn btn-outline" onclick="App.closeCamera()">취소</button>
+      <button class="btn btn-primary" aria-label="사진 찍기" onclick="App.capturePhoto()">📸 찍기</button>
+      <button class="btn btn-outline" aria-label="카메라 닫기" onclick="App.closeCamera()">취소</button>
     </div>
   </div>
 </div>
